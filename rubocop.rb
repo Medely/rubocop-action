@@ -5,20 +5,38 @@
 
 # Setup
 
-puts "::group::Installing Rubocop gems"
-versioned_rubocop_gems =
-  if ENV.fetch("RUBOCOP_GEM_VERSIONS").downcase == "gemfile"
-    require "bundler"
+require "open3"
 
-    Bundler::LockfileParser.new(Bundler.read_file("Gemfile.lock")).specs
-      .select { |spec| spec.name.start_with? "rubocop" }
-      .map { |spec| "#{spec.name}:#{spec.version}" }
-  else
-    ENV.fetch("RUBOCOP_GEM_VERSIONS").split
+puts "::group::Installing Rubocop gems"
+
+if ENV.fetch("RUBOCOP_GEM_VERSIONS").downcase == "gemfile"
+  require "bundler"
+
+  gemfile = Bundler::LockfileParser.new(Bundler.read_file("Gemfile.lock"))
+  to_remove = gemfile.dependencies.keys.reject do |dependency|
+    dependency.include?("rubocop") || dependency == "syntax_tree"
   end
-gem_install_command = "gem install #{versioned_rubocop_gems.join(' ')} --no-document --conservative"
-puts "Installing gems with:", gem_install_command
-system "time #{gem_install_command}"
+
+  puts "Removing non rubocop gems from Gemfile"
+  system("bundle remove #{to_remove.join(' ')}") or abort("ERROR: Failed to remove non rubocop gems from Gemfile")
+  puts
+
+  puts "Resulting Gemfile:"
+  puts Bundler.read_file("Gemfile")
+
+  puts "Installing gems with: bundle install"
+  system("time bundle install") or abort("ERROR: Failed to install gems")
+
+  rubocop_command = "bundle exec rubocop"
+else
+  versioned_rubocop_gems = ENV.fetch("RUBOCOP_GEM_VERSIONS").split
+  gem_install_command = "gem install #{versioned_rubocop_gems.join(' ')} --no-document --conservative"
+  puts "Installing gems with:", gem_install_command
+  system "time #{gem_install_command}"
+
+  rubocop_command = "rubocop"
+end
+
 puts "::endgroup::"
 
 # Script
@@ -36,10 +54,26 @@ changed_ruby_files = Github.pull_request_ruby_files(owner_and_repository, pr_num
 # JSON reference: https://docs.rubocop.org/rubocop/formatters.html#json-formatter
 files_with_offenses =
   if changed_ruby_files.any?
-    command = "rubocop #{changed_ruby_files.map(&:path).join(' ')} --format json --force-exclusion #{ARGV.join(' ')}"
+    command = "#{rubocop_command} #{changed_ruby_files.map(&:path).join(' ')} --format json --force-exclusion #{ARGV.join(' ')}"
 
     puts "Running rubocop with: #{command}"
-    JSON.parse(`#{command}`).fetch("files")
+    stdout, stderr, status = Open3.capture3(command)
+
+    if status.success?
+      puts "Rubocop finished successfully"
+    else
+      puts "Rubocop failed with status #{status.exitstatus}"
+      puts "Rubocop output:\n#{stdout}" unless stdout.empty?
+      puts "Rubocop error output:\n#{stderr}" unless stderr.empty?
+    end
+
+    # In case --debug is passed to rubocop, the output is not valid JSON so we have to substring it
+    json_start = stdout.index("{")
+    json_end = stdout.rindex("}")
+
+    abort "ERROR: No JSON found in rubocop output" unless json_start && json_end
+
+    JSON.parse(stdout[json_start..json_end]).fetch("files")
   else
     puts "No changed Ruby files, skipping rubocop"
 
@@ -50,7 +84,7 @@ files_with_offenses =
 
 puts "Fetching PR comments from https://api.github.com/repos/#{owner_and_repository}/pulls/#{pr_number}/comments"
 
-existing_comments = Github.get!("/repos/#{owner_and_repository}/pulls/#{pr_number}/comments")
+existing_comments = Github.get("/repos/#{owner_and_repository}/pulls/#{pr_number}/comments")
 
 comments_made_by_rubocop = existing_comments.select do |comment|
   comment.fetch("body").include?("rubocop-comment-id")
@@ -74,7 +108,7 @@ fixed_comments.each do |comment|
 
   puts "Deleting resolved comment #{comment_id} on #{path} line #{line}"
 
-  Github.delete!("/repos/#{owner_and_repository}/pulls/comments/#{comment_id}")
+  Github.delete("/repos/#{owner_and_repository}/pulls/comments/#{comment_id}")
 end
 
 # Comment on the pull request with the offenses found
@@ -130,7 +164,7 @@ files_with_offenses.each do |file|
       # Somehow the commit_id should not be just the HEAD SHA: https://stackoverflow.com/a/71431370/1075108
       commit_id = github_event.fetch("pull_request").fetch("head").fetch("sha")
 
-      Github.post!(
+      Github.post(
         "/repos/#{owner_and_repository}/pulls/#{pr_number}/comments",
         body: body,
         path: path,
@@ -145,7 +179,7 @@ end
 
 # If there are any offenses outside the diff, make a separate comment for them
 
-separate_comments = Github.get!("/repos/#{owner_and_repository}/issues/#{pr_number}/comments")
+separate_comments = Github.get("/repos/#{owner_and_repository}/issues/#{pr_number}/comments")
 existing_separate_comment = separate_comments.find do |comment|
   comment.fetch("body").include?("rubocop-comment-id: outside-diff")
 end
@@ -171,12 +205,12 @@ if offences_outside_diff.any?
       puts "Skipping unchanged separate comment #{existing_comment_id}"
     else
       puts "Updating separate comment #{existing_comment_id}"
-      Github.patch!("/repos/#{owner_and_repository}/issues/comments/#{existing_comment_id}", body: body)
+      Github.patch("/repos/#{owner_and_repository}/issues/comments/#{existing_comment_id}", body: body)
     end
   else
     puts "Commenting on pull request with offenses found outside the diff"
 
-    Github.post!("/repos/#{owner_and_repository}/issues/#{pr_number}/comments", body: body)
+    Github.post("/repos/#{owner_and_repository}/issues/#{pr_number}/comments", body: body)
   end
 elsif existing_separate_comment
   existing_comment_id = existing_separate_comment.fetch("id")
