@@ -56,7 +56,7 @@ module Github
     end
   end
 
-  # Returns Array of File objects for all files in a pull request which have the .rb extension.
+  # Returns Array of File objects for all files in a pull request which have the .rake or .rb extension.
   def self.pull_request_ruby_files(owner_and_repository, pr_number)
     changed_files = []
     1.step do |page|
@@ -66,7 +66,7 @@ module Github
     end
     changed_files
       .reject { |file| file.fetch("status") == "removed" }
-      .select { |file| file.fetch("filename").end_with?(".rb") }
+      .select { |file| file.fetch("filename").end_with?(".rake", ".rb") }
       .map { |file| File.new(file) }
   end
 
