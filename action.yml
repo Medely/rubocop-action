@@ -13,8 +13,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - run: ruby $GITHUB_ACTION_PATH/rubocop.rb ${{ inputs.rubocop_arguments }}
+    - run: ruby $GITHUB_ACTION_PATH/rubocop.rb "$RUBOCOP_ARGS"
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ inputs.github_token }}
-        RUBOCOP_GEM_VERSIONS: ${{ inputs.gem_versions }}
+        GITHUB_TOKEN: "${{ inputs.github_token }}"
+        RUBOCOP_GEM_VERSIONS: "${{ inputs.gem_versions }}"
+        RUBOCOP_ARGS: "${{ inputs.rubocop_arguments }}"

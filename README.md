@@ -1,6 +1,6 @@
 # rubocop-action
 
-This GitHub action runs rubocop and posts offences as inline comments on pull requests. When offences are resolved, the comments are fully deleted, making for clean pull requests without noisy history.
+This GitHub action runs rubocop and posts offenses as inline comments on pull requests. When offenses are resolved, the comments are fully deleted, making for clean pull requests without noisy history.
 
 This action was created to replace the unmaintained [Hound](https://houndci.com/) service from Thoughtbot.
 
@@ -21,9 +21,9 @@ jobs:
   rubocop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: ruby/setup-ruby@v1
-      - uses: reclaim-the-stack/rubocop-action@v1
+      - uses: actions/checkout@hash # v3
+      - uses: ruby/setup-ruby@hash # v1
+      - uses: reclaim-the-stack/rubocop-action@hash # v1
 ```
 
 ### Configuration
