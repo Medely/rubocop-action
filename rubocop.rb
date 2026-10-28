@@ -43,10 +43,16 @@ files_with_offenses =
     # Execute command and capture stdout
     raw_output = `#{command}`
 
-    # Strip any leading non-JSON output (like git/bundler fetch notices)
+    # Locate start of JSON output
     json_start = raw_output.index("{")
-    json_payload = json_start ? raw_output[json_start..] : raw_output
 
+    unless json_start
+      puts "Error: RuboCop failed to generate JSON output. Command output was:"
+      puts raw_output
+      exit 1
+    end
+
+    json_payload = raw_output[json_start..]
     JSON.parse(json_payload).fetch("files")
   else
     puts "No changed Ruby files, skipping rubocop"
